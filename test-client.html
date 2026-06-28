@@ -1,0 +1,318 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>NewAPI 视频解析测试</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: #f5f7fb;
+      color: #1f2937;
+      font-family: Arial, "Microsoft YaHei", sans-serif;
+    }
+    header {
+      padding: 18px 22px;
+      background: #111827;
+      color: white;
+    }
+    header h1 {
+      margin: 0;
+      font-size: 20px;
+    }
+    main {
+      max-width: 1180px;
+      margin: 0 auto;
+      padding: 18px;
+      display: grid;
+      grid-template-columns: 390px 1fr;
+      gap: 16px;
+    }
+    section {
+      background: white;
+      border: 1px solid #d8dee4;
+      border-radius: 8px;
+      padding: 16px;
+    }
+    label {
+      display: block;
+      margin: 12px 0 6px;
+      font-size: 13px;
+      font-weight: 700;
+    }
+    input, textarea, button {
+      width: 100%;
+      border-radius: 6px;
+      font: inherit;
+    }
+    input, textarea {
+      border: 1px solid #cfd7e3;
+      padding: 9px 10px;
+      background: #fff;
+    }
+    textarea {
+      min-height: 150px;
+      resize: vertical;
+      line-height: 1.55;
+    }
+    button {
+      margin-top: 14px;
+      border: 0;
+      padding: 11px 12px;
+      background: #2563eb;
+      color: white;
+      font-weight: 700;
+      cursor: pointer;
+    }
+    button:disabled {
+      opacity: .6;
+      cursor: not-allowed;
+    }
+    .hint {
+      color: #667085;
+      font-size: 12px;
+      line-height: 1.6;
+    }
+    .status {
+      margin-top: 12px;
+      padding: 10px;
+      border-radius: 6px;
+      background: #f1f5f9;
+      white-space: pre-wrap;
+      font-size: 13px;
+    }
+    .status.ok { color: #166534; background: #dcfce7; }
+    .status.bad { color: #991b1b; background: #fee2e2; }
+    .tabs {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 12px;
+      flex-wrap: wrap;
+    }
+    .tabs button {
+      width: auto;
+      margin: 0;
+      padding: 8px 11px;
+      background: #e5e7eb;
+      color: #111827;
+    }
+    .tabs button.active {
+      background: #111827;
+      color: white;
+    }
+    pre {
+      margin: 0;
+      padding: 12px;
+      overflow: auto;
+      min-height: 520px;
+      max-height: 70vh;
+      border-radius: 6px;
+      background: #0b1020;
+      color: #dbeafe;
+      font-size: 12px;
+      line-height: 1.55;
+    }
+    .cards {
+      display: grid;
+      gap: 10px;
+    }
+    .card {
+      border: 1px solid #d8dee4;
+      border-radius: 8px;
+      padding: 10px;
+      background: #f8fafc;
+      overflow: hidden;
+    }
+    .card b {
+      display: block;
+      margin-bottom: 6px;
+      font-size: 14px;
+    }
+    .card a {
+      color: #2563eb;
+      word-break: break-all;
+    }
+    .meta {
+      display: grid;
+      gap: 8px;
+      margin-bottom: 12px;
+      padding: 12px;
+      border-radius: 8px;
+      background: #f8fafc;
+      border: 1px solid #e5e7eb;
+      font-size: 14px;
+    }
+    @media (max-width: 860px) {
+      main { grid-template-columns: 1fr; }
+      pre { min-height: 360px; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>NewAPI 视频解析测试</h1>
+  </header>
+  <main>
+    <section>
+      <label>NewAPI Base URL</label>
+      <input id="baseUrl" value="https://api.zmoapi.cn/v1">
+      <div class="hint">如果你直接测 wrapper，可以填 http://127.0.0.1:18788/v1 或你的解析域名 /v1。</div>
+
+      <label>API Key</label>
+      <input id="apiKey" type="password" placeholder="sk-...">
+      <div class="hint">这个 key 只保存在当前浏览器 localStorage，不会上传到别处。</div>
+
+      <label>模型</label>
+      <input id="model" value="video-parse">
+      <div class="hint">自动识别用 video-parse；固定抖音可用 video-parse-dy。</div>
+
+      <label>分享文本 / 链接</label>
+      <textarea id="shareText">5.89 复制打开抖音，看看【予懿🏓钦的图文作品】樊振东。T0级别选手 实力不用多说# 樊振东 # ... https://v.douyin.com/g63ZBNf9fCk/ :6pm i@C.Hi MwS:/ 10/27</textarea>
+
+      <button id="sendBtn">开始解析</button>
+      <div id="status" class="status">等待测试...</div>
+    </section>
+
+    <section>
+      <div class="tabs">
+        <button class="active" data-tab="summary">整理结果</button>
+        <button data-tab="content">解析 JSON</button>
+        <button data-tab="raw">OpenAI 原始返回</button>
+      </div>
+      <div id="summary"></div>
+      <pre id="content" style="display:none"></pre>
+      <pre id="raw" style="display:none"></pre>
+    </section>
+  </main>
+
+  <script>
+    const $ = (id) => document.getElementById(id);
+    const fields = ["baseUrl", "apiKey", "model", "shareText"];
+    for (const id of fields) {
+      const saved = localStorage.getItem("video-test-" + id);
+      if (saved) $(id).value = saved;
+      $(id).addEventListener("input", () => localStorage.setItem("video-test-" + id, $(id).value));
+    }
+
+    document.querySelectorAll(".tabs button").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        document.querySelectorAll(".tabs button").forEach((item) => item.classList.remove("active"));
+        btn.classList.add("active");
+        for (const id of ["summary", "content", "raw"]) $(id).style.display = id === btn.dataset.tab ? "" : "none";
+      });
+    });
+
+    $("sendBtn").addEventListener("click", async () => {
+      const baseUrl = $("baseUrl").value.trim().replace(/\/+$/, "");
+      const apiKey = $("apiKey").value.trim();
+      const model = $("model").value.trim() || "video-parse";
+      const shareText = $("shareText").value.trim();
+      if (!baseUrl || !apiKey || !shareText) {
+        setStatus("请先填写 Base URL、API Key 和分享文本。", false);
+        return;
+      }
+      $("sendBtn").disabled = true;
+      setStatus("请求中...", true);
+      $("summary").innerHTML = "";
+      $("content").textContent = "";
+      $("raw").textContent = "";
+      try {
+        const res = await fetch(baseUrl + "/chat/completions", {
+          method: "POST",
+          headers: {
+            "Authorization": "Bearer " + apiKey,
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({
+            model,
+            messages: [{ role: "user", content: shareText }]
+          })
+        });
+        const text = await res.text();
+        let raw;
+        try {
+          raw = JSON.parse(text);
+        } catch (_) {
+          throw new Error("返回不是 JSON：\n" + text.slice(0, 1000));
+        }
+        $("raw").textContent = JSON.stringify(raw, null, 2);
+        const content = raw && raw.choices && raw.choices[0] && raw.choices[0].message && raw.choices[0].message.content;
+        let parsed = null;
+        if (content) {
+          try {
+            parsed = JSON.parse(content);
+            $("content").textContent = JSON.stringify(parsed, null, 2);
+          } catch (_) {
+            $("content").textContent = content;
+          }
+        }
+        if (!res.ok) {
+          setStatus("HTTP " + res.status + "，请看 OpenAI 原始返回。", false);
+        } else if (parsed && parsed.ok) {
+          setStatus("解析成功，用时 " + parsed.durationMs + "ms", true);
+        } else {
+          setStatus("请求完成，但解析结果不是 ok=true。", false);
+        }
+        renderSummary(parsed, raw);
+      } catch (err) {
+        setStatus("请求失败：\n" + err.message + "\n\n如果你是直接打开 file:// 本地文件，且这里提示 CORS，可以把本文件上传到同域名站点，或临时用浏览器关闭 CORS 测试。", false);
+      } finally {
+        $("sendBtn").disabled = false;
+      }
+    });
+
+    function setStatus(text, ok) {
+      $("status").textContent = text;
+      $("status").className = "status " + (ok ? "ok" : "bad");
+    }
+
+    function renderSummary(parsed, raw) {
+      if (!parsed) {
+        $("summary").innerHTML = '<div class="status bad">没有解析出 choices[0].message.content JSON。</div>';
+        return;
+      }
+      const n = parsed.normalized || {};
+      const api = parsed.api || {};
+      $("summary").innerHTML = `
+        <div class="meta">
+          <div><b>状态：</b>${escapeHtml(String(parsed.ok))} / HTTP ${escapeHtml(String(parsed.status || ""))}</div>
+          <div><b>平台：</b>${escapeHtml(api.name || api.id || "-")}</div>
+          <div><b>标题：</b>${escapeHtml(n.title || "-")}</div>
+          <div><b>提取链接：</b><a href="${escapeAttr((parsed.input || {}).normalizedUrl || "")}" target="_blank">${escapeHtml((parsed.input || {}).normalizedUrl || "-")}</a></div>
+          ${n.cover ? `<div><b>封面：</b><a href="${escapeAttr(n.cover)}" target="_blank">${escapeHtml(n.cover)}</a></div>` : ""}
+        </div>
+        ${renderList("视频", n.videos || [])}
+        ${renderList("图片", n.images || [])}
+        ${renderList("音频", n.audios || [])}
+        ${renderList("其他链接", n.links || [])}
+      `;
+    }
+
+    function renderList(title, items) {
+      if (!items.length) return `<h3>${title}（0）</h3><div class="hint">暂无</div>`;
+      return `<h3>${title}（${items.length}）</h3><div class="cards">` + items.map((item) => `
+        <div class="card">
+          <b>${escapeHtml(item.label || item.type || title)}</b>
+          <a href="${escapeAttr(item.url)}" target="_blank">${escapeHtml(item.url)}</a>
+          <div class="hint">类型：${escapeHtml(item.type || "")} ${item.filename ? " / 文件名：" + escapeHtml(item.filename) : ""}</div>
+        </div>
+      `).join("") + `</div>`;
+    }
+
+    function escapeHtml(value) {
+      return String(value || "").replace(/[&<>"']/g, (c) => ({
+        "&": "&amp;",
+        "<": "&lt;",
+        ">": "&gt;",
+        '"': "&quot;",
+        "'": "&#39;"
+      }[c]));
+    }
+
+    function escapeAttr(value) {
+      return escapeHtml(value).replace(/`/g, "&#96;");
+    }
+  </script>
+</body>
+</html>
