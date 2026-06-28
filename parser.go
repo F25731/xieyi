@@ -267,7 +267,10 @@ func normalizeResult(upstream any) NormalizedResult {
 	source := unwrapData(upstream)
 	urls := collectURLs(source, "")
 	seen := map[string]bool{}
-	var videos, images, audios, links []MediaItem
+	videos := make([]MediaItem, 0)
+	images := make([]MediaItem, 0)
+	audios := make([]MediaItem, 0)
+	links := make([]MediaItem, 0)
 	for _, item := range urls {
 		if seen[item.URL] {
 			continue
@@ -337,12 +340,14 @@ func classifyURL(label, raw string) string {
 	ext := strings.ToLower(filepath.Ext(strings.Split(raw, "?")[0]))
 	mt := mime.TypeByExtension(ext)
 	switch {
-	case strings.Contains(mt, "image/") || regexp.MustCompile(`(?i)(cover|poster|thumb|avatar|image|img|pic|photo|logo)`).MatchString(text):
-		return "image"
-	case strings.Contains(mt, "audio/") || regexp.MustCompile(`(?i)(music|audio|mp3|m4a|wav|sound)`).MatchString(text):
-		return "audio"
 	case strings.Contains(mt, "video/") || regexp.MustCompile(`(?i)(video|play|mp4|m3u8|mov|webm|download|url)`).MatchString(text):
 		return "video"
+	case regexp.MustCompile(`(?i)(live[_ -]?photo|video_mp4|mime_type=video)`).MatchString(text):
+		return "video"
+	case strings.Contains(mt, "audio/") || regexp.MustCompile(`(?i)(music|audio|mp3|m4a|wav|sound)`).MatchString(text):
+		return "audio"
+	case strings.Contains(mt, "image/") || regexp.MustCompile(`(?i)(cover|poster|thumb|avatar|image|img|pic|photo|logo)`).MatchString(text):
+		return "image"
 	default:
 		return "link"
 	}
