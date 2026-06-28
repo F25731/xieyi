@@ -47,6 +47,9 @@ type MediaItem struct {
 	Label    string `json:"label"`
 	URL      string `json:"url"`
 	Type     string `json:"type"`
+	Quality  string `json:"quality,omitempty"`
+	Ext      string `json:"ext,omitempty"`
+	Size     int64  `json:"size,omitempty"`
 	Details  string `json:"details,omitempty"`
 	Filename string `json:"filename,omitempty"`
 }
@@ -265,6 +268,9 @@ func hostMatches(raw, domain string) bool {
 
 func normalizeResult(upstream any) NormalizedResult {
 	source := unwrapData(upstream)
+	if normalized, ok := normalizeYouTubeMedias(source); ok {
+		return normalized
+	}
 	urls := collectURLs(source, "")
 	seen := map[string]bool{}
 	videos := make([]MediaItem, 0)
@@ -300,6 +306,109 @@ func normalizeResult(upstream any) NormalizedResult {
 		Audios: audios,
 		Links:  links,
 	}
+}
+
+func normalizeYouTubeMedias(source any) (NormalizedResult, bool) {
+	m, ok := source.(map[string]any)
+	if !ok {
+		return NormalizedResult{}, false
+	}
+	rawMedias, ok := m["medias"].([]any)
+	if !ok || len(rawMedias) == 0 {
+		return NormalizedResult{}, false
+	}
+	if !looksLikeYouTubeMedias(rawMedias) {
+		return NormalizedResult{}, false
+	}
+
+	videos := make([]MediaItem, 0, len(rawMedias))
+	audios := make([]MediaItem, 0, 1)
+	seenAudio := map[string]bool{}
+	for _, raw := range rawMedias {
+		media, ok := raw.(map[string]any)
+		if !ok {
+			continue
+		}
+		quality := strings.TrimSpace(pickString(media, "quality"))
+		ext := strings.TrimSpace(pickString(media, "ext"))
+		videoURL := strings.TrimSpace(pickString(media, "url"))
+		if videoURL != "" {
+			label := formatMediaLabel("Video", quality, ext)
+			videos = append(videos, MediaItem{
+				Label:    label,
+				URL:      videoURL,
+				Type:     "video",
+				Quality:  quality,
+				Ext:      ext,
+				Size:     toInt64(media["size"]),
+				Filename: buildFilename("video", label, len(videos)+1),
+			})
+		}
+
+		audioURL := strings.TrimSpace(pickString(media, "audio_url"))
+		if audioURL != "" && !seenAudio[audioURL] {
+			seenAudio[audioURL] = true
+			audioExt := strings.TrimSpace(pickString(media, "audio_ext"))
+			label := formatMediaLabel("Audio", "", audioExt)
+			audios = append(audios, MediaItem{
+				Label:    label,
+				URL:      audioURL,
+				Type:     "audio",
+				Ext:      audioExt,
+				Size:     toInt64(media["audio_size"]),
+				Filename: buildFilename("audio", label, len(audios)+1),
+			})
+		}
+	}
+	if len(videos) == 0 && len(audios) == 0 {
+		return NormalizedResult{}, false
+	}
+
+	images := make([]MediaItem, 0, 1)
+	cover := pickString(source, "cover", "poster", "thumbnail", "thumb", "image")
+	if cover != "" {
+		images = append(images, MediaItem{
+			Label:    "thumbnail",
+			URL:      cover,
+			Type:     "image",
+			Filename: buildFilename("image", "thumbnail", 1),
+		})
+	}
+
+	return NormalizedResult{
+		Title:  first(pickString(source, "title", "desc", "description", "text"), "解析结果"),
+		Author: pickString(source, "author", "nickname", "name", "user"),
+		Avatar: pickString(source, "avatar", "avatar_url", "head", "headimg"),
+		Cover:  first(cover, firstURL(images)),
+		Videos: videos,
+		Images: images,
+		Audios: audios,
+		Links:  []MediaItem{},
+	}, true
+}
+
+func looksLikeYouTubeMedias(items []any) bool {
+	for _, raw := range items {
+		media, ok := raw.(map[string]any)
+		if !ok {
+			continue
+		}
+		if pickString(media, "audio_url", "audio_ext", "quality") != "" {
+			return true
+		}
+	}
+	return false
+}
+
+func formatMediaLabel(kind, quality, ext string) string {
+	parts := []string{kind}
+	if quality != "" {
+		parts[0] = quality
+	}
+	if ext != "" {
+		parts = append(parts, strings.ToUpper(ext))
+	}
+	return strings.Join(parts, " ")
 }
 
 func unwrapData(v any) any {
@@ -364,6 +473,25 @@ func pickString(v any, keys ...string) string {
 		}
 	}
 	return ""
+}
+
+func toInt64(v any) int64 {
+	switch x := v.(type) {
+	case int:
+		return int64(x)
+	case int64:
+		return x
+	case float64:
+		return int64(x)
+	case json.Number:
+		n, _ := x.Int64()
+		return n
+	case string:
+		n, _ := strconv.ParseInt(strings.TrimSpace(x), 10, 64)
+		return n
+	default:
+		return 0
+	}
 }
 
 func firstURL(items []MediaItem) string {
