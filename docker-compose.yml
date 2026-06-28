@@ -1,0 +1,13 @@
+services:
+  newapi-video-wrapper:
+    build: .
+    container_name: newapi-video-wrapper
+    restart: unless-stopped
+    ports:
+      - "18788:18788"
+    environment:
+      PORT: "18788"
+      ADMIN_PASSWORD: "Fyb2530+"
+      CONFIG_PATH: "/app/data/config.json"
+    volumes:
+      - ./data:/app/data
